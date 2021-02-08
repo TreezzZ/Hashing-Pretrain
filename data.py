@@ -6,20 +6,36 @@ import numpy as np
 import nvidia.dali.fn as fn
 import nvidia.dali.ops as ops
 import nvidia.dali.types as types
+import torch
+import torchvision.transforms as T
 from nvidia.dali.pipeline import Pipeline
-from nvidia.dali.plugin.pytorch import DALIGenericIterator
+from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset
 
 
 def get_train_dataloader(
-    data_dir: str,
+    ilsvrc_data_dir: str,
     batch_size: int,
     sample_per_class: int,
     num_workers: int,
     gpu_id: int,
-    ):
-    data_dir = osp.join(data_dir, "train")
+    ) -> torch.utils.data.DataLoader:
+    """Create train data loader.
+
+    Args:
+        ilsvrc_data_dir (str): Dictory of ILSVRC-2012.
+        batch_size (int): Batch size.
+        sample_per_class (int): Number of samples per class.
+        num_workers (int): Number of data loader threads.
+        gpu_id (int): GPU id.
+
+    Returns:
+        torch.utils.data.DataLoader: ILSVRC-2012 train data loader.
+    """
+    ilsvrc_data_dir = osp.join(ilsvrc_data_dir, "train")
     ilsvrc_train_pipeline = ILSVRC_train_Pipeline(
-        data_dir,
+        ilsvrc_data_dir,
         batch_size=batch_size, 
         sample_per_class=sample_per_class,
         device_id=gpu_id, 
@@ -29,6 +45,8 @@ def get_train_dataloader(
     ilsvrc_train_loader = DALIGenericIterator(
         [ilsvrc_train_pipeline],
         ["data", "label"],
+        last_batch_padded=True,
+        last_batch_policy=LastBatchPolicy.PARTIAL,
     )
 
     return ilsvrc_train_loader
@@ -97,6 +115,11 @@ class ExternalInputIterator(object):
         return self
 
     def __next__(self):
+        if self.i >= self.n:
+            self.i = 0
+            raise StopIteration
+        self.i += 1
+
         batch = []
         labels = []
         indices = self._balanced_sample()
@@ -107,13 +130,13 @@ class ExternalInputIterator(object):
             with open(img_filename, 'rb') as f:
                 batch.append(np.frombuffer(f.read(), dtype = np.uint8))
             labels.append(np.array([label], dtype = np.uint8))
-        self.i += 1
-        if self.i == self.n:
-            self.i = 0
-            raise StopIteration
+        
         return (batch, labels)
 
     next = __next__
+
+    def __len__(self):
+        return len(self.data)
 
     def _balanced_sample(self) -> List[int]:
         indices = []
@@ -182,6 +205,156 @@ class ILSVRC_train_Pipeline(Pipeline):
         labels = self.to_int64(labels)
 
         return (images, labels)
+
+
+def get_test_dataloader(
+    ilsvrc_data_dir: str, 
+    cifar_data_dir: str, 
+    nuswide_data_dir: str, 
+    batch_size: int, 
+    num_workers: int,
+    ) -> Tuple[torch.utils.data.DataLoader]:
+    """Create test data loader.
+
+    Args:
+        ilsvrc_data_dir (str): Dictory of ILSVRC-2012.
+        cifar_data_dir (str): Dictory of CIFAR-10.
+        nuswide_data_dir (str): Dictory of NUS-WIDE.
+        batch_size (int): Batch size.
+        num_workers (int): Number of data loader threads.
+
+    Returns:
+        Tuple[torch.utils.data.DataLoader]: ILSVRC-2012, CIFAR-10, NUS-WIDE data loaders.
+    """
+    test_transform = T.Compose([
+        T.Resize(256),
+        T.CenterCrop(224),
+        T.ToTensor(),
+        #T.ConvertImageDtype(torch.float32),
+        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    ilsvrc_query_dataset = ImageNet(
+        osp.join(ilsvrc_data_dir, "query"),
+        test_transform,
+    )
+    ilsvrc_query_loader = DataLoader(
+        ilsvrc_query_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers   
+    )
+    ilsvrc_gallery_dataset = ImageNet(
+        osp.join(ilsvrc_data_dir, "gallery"),
+        test_transform,
+    )
+    ilsvrc_gallery_loader = DataLoader(
+        ilsvrc_gallery_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers   
+    )
+
+    cifar_query_dataset = HashingDataset(osp.join(cifar_data_dir, "query.txt"), test_transform)
+    cifar_query_loader = DataLoader(
+        cifar_query_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers
+    )
+    cifar_gallery_dataset = HashingDataset(osp.join(cifar_data_dir, "gallery.txt"), test_transform)
+    cifar_gallery_loader = DataLoader(
+        cifar_gallery_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers
+    )
+
+    nuswide_query_dataset = HashingDataset(osp.join(nuswide_data_dir, "query.txt"), test_transform)
+    nuswide_query_loader = DataLoader(
+        nuswide_query_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers
+    )
+    nuswide_gallery_dataset = HashingDataset(osp.join(nuswide_data_dir, "gallery.txt"), test_transform)
+    nuswide_gallery_loader = DataLoader(
+        nuswide_gallery_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=num_workers
+    )
+
+    return ilsvrc_query_loader, ilsvrc_gallery_loader, cifar_query_loader, cifar_gallery_loader, nuswide_query_loader, nuswide_gallery_loader
+
+
+class ImageNet(Dataset):
+    class_id_to = None
+    def __init__(self, data_dir, transform=None):
+        super(ImageNet, self).__init__()
+        self.transform = transform
+        if not ImageNet.class_id_to:
+            ImageNet.class_to_id = {v: k for k, v in enumerate(os.listdir(data_dir))}
+        self.img_pths = []
+        self.labels = []
+        for class_name in os.listdir(data_dir):
+            class_id = ImageNet.class_to_id[class_name]
+            for file in os.listdir(osp.join(data_dir, class_name)):
+                self.img_pths.append(osp.join(data_dir, class_name, file))
+                self.labels.append(class_id)
+        self.labels = torch.tensor(self.labels).long()
+        self.onehot_labels = torch.zeros(len(self.labels), 1000) 
+        for i in range(len(self.labels)):
+            self.onehot_labels[i, self.labels[i]] = 1
+    
+    def __getitem__(self, index):
+        img_pth = self.img_pths[index]
+        label = self.labels[index]
+        #img = tio.read_image(img_pth)
+        img = Image.open(img_pth).convert("RGB")
+        if self.transform:
+            img = self.transform(img)
+
+        return img, label, index
+
+    def __len__(self):
+        return len(self.img_pths)
+
+
+class HashingDataset(Dataset):
+    def __init__(self, txt_pth, transform=None):
+        super(HashingDataset, self).__init__()
+        self.transform = transform
+
+        img_dir = osp.join("/".join(txt_pth.split("/")[:-1]), "images")
+        self.img_pths = []
+        self.labels = []
+        with open(txt_pth, "r") as f:
+            for line in f:
+                line = line.strip().split(" ")
+                img_pth = line[0]
+                label = list(map(int, line[1:]))
+                self.img_pths.append(osp.join(img_dir, img_pth))
+                self.labels.append(torch.tensor(label))
+        self.labels = torch.vstack(self.labels).float()
+        self.onehot_labels = self.labels
+        
+    def __getitem__(self, index):
+        img_pth = self.img_pths[index]
+        label = self.labels[index]
+        img = Image.open(img_pth).convert("RGB")
+        if self.transform:
+            img = self.transform(img)
+        
+        return img, label, index
+
+    def __len__(self):
+        return len(self.img_pths)
 
 
 if __name__ == "__main__":
