@@ -14,5 +14,6 @@ RUN apt-get update \
 ADD nvidia_dali_cuda110-0.30.0-1983575-py3-none-manylinux2014_x86_64.whl /tmp/
 RUN pip install loguru pytorch-metric-learning /tmp/nvidia_dali_cuda110-0.30.0-1983575-py3-none-manylinux2014_x86_64.whl && rm /tmp/nvidia_dali_cuda110-0.30.0-1983575-py3-none-manylinux2014_x86_64.whl
 
-ADD PretrainedHashing.tar.gz .
-WORKDIR ./PretrainedHashing
+WORKDIR /workspace
+RUN git clone https://github.com/TreezzZ/Hashing-Pretrain.git
+WORKDIR Hashing-Pretrain
