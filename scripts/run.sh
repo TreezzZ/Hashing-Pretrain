@@ -5,7 +5,8 @@ python main.py\
     --nuswide_data_dir /dataset/nus-wide\
     --batch_size 128\
     --sample_per_class 8\
-    --lr 1e-2\
     --eval_step 1\
     --fp16\
     --no_save\
+    --lr 1e-2\
+    --margin 1.0 \

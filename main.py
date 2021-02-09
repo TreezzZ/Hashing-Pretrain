@@ -114,9 +114,12 @@ def main(args):
                 checkpoint_pth = osp.join(args.work_dir, checkpoint_name)
                 torch.save(model.state_dict(), checkpoint_pth)
 
-        scheduler.step()
+        #scheduler.step()
+
+    return cifar_best_mAP
     
 
 if __name__ == "__main__":
     args = get_config()
-    main(args)
+    mAP = main(args)
+    logger.info("Best mAP: {:.4f}".format(mAP))

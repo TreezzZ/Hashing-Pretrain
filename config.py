@@ -67,12 +67,12 @@ def get_config():
         help="Specify gpu. (Default: 0)"
     )
     train_group.add_argument(
-        "--max_epochs", type=int, default=50,
-        help="The number of epochs. (default: 50)"
+        "--max_epochs", type=int, default=5,
+        help="The number of epochs. (default: 5)"
     )
     train_group.add_argument(
-        "--eval_step", type=int, default=50,
-        help="Evaluate validation dataset every n epochs. (default: 50)"
+        "--eval_step", type=int, default=5,
+        help="Evaluate validation dataset every n epochs. (default: 5)"
     )
     train_group.add_argument(
         "--work_dir", type=str, default="./work_dir",
