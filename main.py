@@ -121,5 +121,7 @@ def main(args):
 
 if __name__ == "__main__":
     args = get_config()
-    mAP = main(args)
-    logger.info("Best mAP: {:.4f}".format(mAP))
+    for lr in [0.004, 0.003, 0.002, 0.0009, 0.0008, 0.0007, 0.0006]:
+        args.lr = lr
+        mAP = main(args)
+        logger.info("lr: {} Best mAP: {:.4f}".format(lr, mAP))
