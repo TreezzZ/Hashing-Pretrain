@@ -20,7 +20,7 @@ def get_train_dataloader(
     sample_per_class: int,
     num_workers: int,
     gpu_id: int,
-    ) -> torch.utils.data.DataLoader:
+    ):
     """Create train data loader.
 
     Args:
@@ -34,6 +34,7 @@ def get_train_dataloader(
         torch.utils.data.DataLoader: ILSVRC-2012 train data loader.
     """
     ilsvrc_data_dir = osp.join(ilsvrc_data_dir, "train")
+    num_train = sum([len(files) for _, _, files in os.walk(ilsvrc_data_dir)])
     ilsvrc_train_pipeline = ILSVRC_train_Pipeline(
         ilsvrc_data_dir,
         batch_size=batch_size, 
@@ -49,7 +50,7 @@ def get_train_dataloader(
         last_batch_policy=LastBatchPolicy.PARTIAL,
     )
 
-    return ilsvrc_train_loader
+    return ilsvrc_train_loader, num_train
 
 
 class ExternalInputIterator(object):
