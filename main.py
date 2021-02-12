@@ -44,7 +44,7 @@ def main(args):
     loss_function = losses.TripletMarginLoss(margin=args.margin)
     miner = miners.TripletMarginMiner(margin=args.margin, type_of_triplets="semihard")
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.max_epochs)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.max_epochs * len(train_dataloader))
 
     if args.fp16:
         from torch.cuda.amp import GradScaler, autocast
@@ -84,6 +84,7 @@ def main(args):
                 running_loss += loss.item()
                 loss.backward()
                 optimizer.step()
+            scheduler.step()
             
             if current_step % args.log_step == 0:
                 running_loss /= args.log_step
@@ -93,17 +94,17 @@ def main(args):
                 running_loss = 0.
             
         if epoch % args.eval_step == 0:
-            #ilsvrc_mAP = get_map(ilsvrc_query_loader, ilsvrc_gallery_loader, model, args.bits, args.device, 1000)
-            #ilsvrc_best_mAP = max(ilsvrc_mAP, ilsvrc_best_mAP)
+            ilsvrc_mAP = get_map(ilsvrc_query_loader, ilsvrc_gallery_loader, model, args.bits, args.device, 1000)
+            ilsvrc_best_mAP = max(ilsvrc_mAP, ilsvrc_best_mAP)
 
             cifar_mAP = get_map(cifar_query_loader, cifar_gallery_loader, model, args.bits, args.device, -1)
             cifar_best_mAP = max(cifar_mAP, cifar_best_mAP)
             logger.debug(cifar_mAP)
 
-            #nuswide_mAP = get_map(nuswide_query_loader, nuswide_gallery_loader, model, args.bits, args.device, 5000)
-            #nuswide_best_mAP = max(nuswide_mAP, nuswide_best_mAP)
+            nuswide_mAP = get_map(nuswide_query_loader, nuswide_gallery_loader, model, args.bits, args.device, 5000)
+            nuswide_best_mAP = max(nuswide_mAP, nuswide_best_mAP)
 
-            #logger.info("\ncurrent epoch: {}\nilsvrc map: {:.4f}\tilsvrc best map: {:.4f}\ncifar map: {:.4f}\tcifar best map: {:.4f}\nnus-wide map: {:.4f}\tnus-wide best map: {:.4f}".format(epoch, ilsvrc_mAP, ilsvrc_best_mAP, cifar_mAP, cifar_best_mAP, nuswide_mAP, nuswide_best_mAP))
+            logger.info("\ncurrent epoch: {}\nilsvrc map: {:.4f}\tilsvrc best map: {:.4f}\ncifar map: {:.4f}\tcifar best map: {:.4f}\nnus-wide map: {:.4f}\tnus-wide best map: {:.4f}".format(epoch, ilsvrc_mAP, ilsvrc_best_mAP, cifar_mAP, cifar_best_mAP, nuswide_mAP, nuswide_best_mAP))
 
             if args.tensorboard:
                 writer.add_scalar("mAP/ILSVRC2012", ilsvrc_mAP, epoch)
@@ -114,14 +115,9 @@ def main(args):
                 checkpoint_pth = osp.join(args.work_dir, checkpoint_name)
                 torch.save(model.state_dict(), checkpoint_pth)
 
-        #scheduler.step()
-
-    return cifar_best_mAP
-    
 
 if __name__ == "__main__":
     args = get_config()
-    for lr in [0.004, 0.003, 0.002, 0.0009, 0.0008, 0.0007, 0.0006]:
-        args.lr = lr
-        mAP = main(args)
-        logger.info("lr: {} Best mAP: {:.4f}".format(lr, mAP))
+    for bits in [128, 256, 512, 1024]:
+        args.bits = bits
+        main(args)

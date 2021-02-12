@@ -136,7 +136,7 @@ class ExternalInputIterator(object):
     next = __next__
 
     def __len__(self):
-        return len(self.data)
+        return self.n
 
     def _balanced_sample(self) -> List[int]:
         indices = []

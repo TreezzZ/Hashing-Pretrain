@@ -7,6 +7,5 @@ python main.py\
     --sample_per_class 8\
     --eval_step 1\
     --fp16\
-    --no_save\
-    --lr 1e-2\
-    --margin 1.0 \
+    --lr 0.001\
+    --margin 0.1 \
