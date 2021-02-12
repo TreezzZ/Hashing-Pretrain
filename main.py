@@ -20,7 +20,7 @@ def main(args):
 
     init_train_env(args.work_dir, args.seed)
 
-    train_dataloader = get_train_dataloader(
+    train_dataloader, num_train = get_train_dataloader(
         args.ilsvrc_data_dir,
         args.batch_size,
         args.sample_per_class,
@@ -44,7 +44,7 @@ def main(args):
     loss_function = losses.TripletMarginLoss(margin=args.margin)
     miner = miners.TripletMarginMiner(margin=args.margin, type_of_triplets="semihard")
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.max_epochs * len(train_dataloader))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.max_epochs * (num_train // batch_size))
 
     if args.fp16:
         from torch.cuda.amp import GradScaler, autocast
