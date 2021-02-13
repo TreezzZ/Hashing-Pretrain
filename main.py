@@ -13,12 +13,12 @@ from utils import get_map, init_train_env
 
 
 def main(args):
+    init_train_env(args.work_dir, args.seed)
+
     params = []
     for k, v in vars(args).items():
         params.append(f"{k}: {v}")
     logger.info("\n" + "\n".join(params))
-
-    init_train_env(args.work_dir, args.seed)
 
     train_dataloader, num_train = get_train_dataloader(
         args.ilsvrc_data_dir,
@@ -44,7 +44,7 @@ def main(args):
     loss_function = losses.TripletMarginLoss(margin=args.margin)
     miner = miners.TripletMarginMiner(margin=args.margin, type_of_triplets="semihard")
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.max_epochs * (num_train // batch_size))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.max_epochs * (num_train // args.batch_size))
 
     if args.fp16:
         from torch.cuda.amp import GradScaler, autocast

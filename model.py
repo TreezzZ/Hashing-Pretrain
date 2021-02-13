@@ -18,6 +18,9 @@ def get_model(
     if arch.lower() == "googlenet":
         model = torchvision.models.googlenet(pretrained=True)
         model.fc = nn.Linear(1024, num_dim)
+    elif arch.lower() == "alexnet":
+        model = torchvision.models.alexnet(pretrained=True)
+        model.classifier[-1] = nn.Linear(4096, num_dim)
     else:
         raise ValueError("Can not find CNN model name!")
 
