@@ -1,4 +1,4 @@
-python main.py\
+python src/main.py\
     --bits 128\
     --ilsvrc_data_dir /dataset/ILSVRC2012\
     --cifar_data_dir /dataset/cifar-10\
