@@ -1,8 +1,9 @@
-ARG PYTORCH="1.7.1"
-ARG CUDA="11.0"
-ARG CUDNN="8"
+ARG PYTORCH="1.5"
+ARG CUDA="10.1"
+ARG CUDNN="7"
+ARG DALI="nvidia_dali_cuda100-0.30.0-1983576-py3-none-manylinux2014_x86_64.whl"
 
-FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-runtime
+FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 
 LABEL maintainer='zhaoshu@iie.ac.cn'
 
@@ -11,8 +12,8 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/
 
-ADD nvidia_dali_cuda110-0.30.0-1983575-py3-none-manylinux2014_x86_64.whl /tmp/
-RUN pip install loguru pytorch-metric-learning onnx onnxruntime /tmp/nvidia_dali_cuda110-0.30.0-1983575-py3-none-manylinux2014_x86_64.whl && rm /tmp/nvidia_dali_cuda110-0.30.0-1983575-py3-none-manylinux2014_x86_64.whl
+ADD ${DALI} /tmp/
+RUN pip install loguru pytorch-metric-learning onnx /tmp/${DALI} && rm /tmp/${DALI}
 
 WORKDIR /workspace
 RUN git clone https://github.com/TreezzZ/Hashing-Pretrain.git
