@@ -16,6 +16,10 @@ parser.add_argument(
     help="Hash code length."
 )
 parser.add_argument(
+    "--batch_size", type=int, required=True,
+    help="Batch size."
+)
+parser.add_argument(
     "--checkpoint", type=str, required=True,
     help="Path of Checkpoint."
 )
@@ -39,8 +43,7 @@ model.to(args.device)
 print("finished.")
 
 # Create random tensor with output shape
-batch_size = 1
-x = torch.randn(batch_size, 3, 224, 224, requires_grad=True, device=args.device)
+x = torch.randn(args.batch_size, 3, 224, 224, requires_grad=True, device=args.device)
 outputs = model(x)
 
 # Export ONNX model
@@ -54,8 +57,8 @@ torch.onnx.export(
     do_constant_folding=True,
     input_names=["input"],
     output_names=["output"],
-    dynamic_axes={'input' : {0 : 'batch_size'},    # variable lenght axes
-                  'output' : {0 : 'batch_size'}},
+    #dynamic_axes={'input' : {0 : 'batch_size'},    # variable lenght axes
+    #              'output' : {0 : 'batch_size'}},
 )
 print("finished.")
 

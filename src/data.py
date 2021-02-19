@@ -208,6 +208,233 @@ class ILSVRC_train_Pipeline(Pipeline):
         return (images, labels)
 
 
+class ExternalTestFolderInputIterator(object):
+    class_id_to = None
+
+    def __init__(
+        self,
+        data_dir: str,
+        batch_size: int,
+    ):
+        self.batch_size = batch_size
+        if not ExternalTestFolderInputIterator.class_id_to:
+            ExternalTestFolderInputIterator.class_to_id = {v: k for k, v in enumerate(os.listdir(data_dir))}
+        self.img_pths = []
+        self.labels = []
+        for class_name in os.listdir(data_dir):
+            class_id = ExternalTestFolderInputIterator.class_to_id[class_name]
+            for file in os.listdir(osp.join(data_dir, class_name)):
+                self.img_pths.append(osp.join(data_dir, class_name, file))
+                self.labels.append(class_id)
+        self.labels = torch.tensor(self.labels).long()
+        self.onehot_labels = torch.zeros(len(self.labels), 1000) 
+        for i in range(len(self.labels)):
+            self.onehot_labels[i, self.labels[i]] = 1
+        self.labels = self.onehot_labels
+    
+    def __len__(self):
+        return len(self.img_pths)
+    
+    def __iter__(self):
+        self.i = 0
+        self.n = len(self.img_pths)
+        return self
+
+    def __next__(self):
+        batch = []
+        labels = []
+
+        for _ in range(self.batch_size):
+            img_filename = self.img_pths[self.i]
+            label = self.labels[self.i]
+            with open(img_filename, "rb") as f:
+                batch.append(np.frombuffer(f.read(), dtype=np.uint8))
+            labels.append(label)
+            self.i += 1
+            if self.i >= self.n:
+                self.i = 0
+                raise StopIteration
+        
+        return (batch, labels)
+
+    next = __next__
+
+
+class ExternalTestInputIterator(object):
+    def __init__(
+        self, 
+        txt_pth: str, 
+        batch_size: int,
+        ):
+        """External Test Input Iterator.
+
+        Args:
+            data_dir (str): Path of data txt file.
+            batch_size (int): Batch size.
+        """
+        self.batch_size = batch_size
+        img_dir = osp.join("/".join(txt_pth.split("/")[:-1]), "images")
+        self.img_pths = []
+        self.labels = []
+        with open(txt_pth, "r") as f:
+            for line in f:
+                line = line.strip().split(" ")
+                img_pth = line[0]
+                label = list(map(int, line[1:]))
+                self.img_pths.append(osp.join(img_dir, img_pth))
+                self.labels.append(torch.tensor(label))
+        self.labels = torch.vstack(self.labels).float()
+        self.onehot_labels = self.labels
+    
+    def __len__(self):
+        return len(self.img_pths)
+    
+    def __iter__(self):
+        self.i = 0
+        self.n = len(self.img_pths)
+        return self
+
+    def __next__(self):
+        batch = []
+        labels = []
+
+        for _ in range(self.batch_size):
+            img_filename = self.img_pths[self.i]
+            label = self.labels[self.i]
+            with open(img_filename, "rb") as f:
+                batch.append(np.frombuffer(f.read(), dtype=np.uint8))
+            labels.append(label)
+            self.i += 1
+            if self.i >= self.n:
+                self.i = 0
+                raise StopIteration
+        
+        return (batch, labels)
+
+    next = __next__
+
+
+def create_test_pipeline(
+    data_dir,
+    batch_size: int,
+    num_workers: int,
+    device_id: int,
+    folder=False,
+    seed: int=1996,
+):
+    pipeline = Pipeline(batch_size, num_workers, device_id, seed)
+    with pipeline:
+        if folder:
+            eii = ExternalTestFolderInputIterator(data_dir, batch_size)
+        else:
+            eii = ExternalTestInputIterator(data_dir, batch_size)
+        images, labels = fn.external_source(source=eii, num_outputs=2)
+        images = fn.image_decoder(
+            images,
+            device="mixed",
+            output_type=types.RGB,
+        )
+        images = fn.resize(
+            images,
+            device="gpu",
+            size=256,
+            mode="not_smaller",
+            interp_type=types.INTERP_TRIANGULAR,
+        )
+        mirror = False
+        images = fn.crop_mirror_normalize(
+            images.gpu(),
+            dtype=types.FLOAT,
+            output_layout="CHW",
+            crop=(224, 224),
+            mean=[0.485 * 255,0.456 * 255,0.406 * 255],
+            std=[0.229 * 255,0.224 * 255,0.225 * 255],
+            mirror=mirror
+        )
+        labels = labels.gpu()
+        pipeline.set_outputs(images, labels)
+    return pipeline, len(eii)
+
+
+def create_test_loader(
+    data_dir: str,
+    batch_size: int,
+    num_workers: int,
+    folder: bool=False,
+    device_id: int=0,
+):
+    pipeline, size = create_test_pipeline(
+        data_dir, 
+        batch_size=batch_size, 
+        num_workers=num_workers, 
+        device_id=device_id,
+        folder=folder,
+        )
+    pipeline.build()
+    loader = DALIGenericIterator(
+        [pipeline],
+        ["data", "label"],
+        last_batch_padded=False,
+        size=size,
+    )
+
+    return loader
+
+
+def get_dali_test_dataloader(
+    ilsvrc_data_dir: str, 
+    cifar_data_dir: str, 
+    nuswide_data_dir: str, 
+    batch_size: int, 
+    num_workers: int,
+    device_id: int=0,
+):
+    ilsvrc_query_loader = create_test_loader(
+        osp.join(ilsvrc_data_dir, "query"), 
+        batch_size=batch_size, 
+        num_workers=num_workers, 
+        folder=True, 
+        device_id=device_id,
+    )
+    ilsvrc_gallery_loader = create_test_loader(
+        osp.join(ilsvrc_data_dir, "gallery"), 
+        batch_size=batch_size, 
+        num_workers=num_workers, 
+        folder=True,
+        device_id=device_id,
+    )
+    cifar_query_loader = create_test_loader(
+        osp.join(cifar_data_dir, "query.txt"),
+        batch_size=batch_size,
+        num_workers=num_workers,
+        folder=False,
+        device_id=device_id,
+    )
+    cifar_gallery_loader = create_test_loader(
+        osp.join(cifar_data_dir, "gallery.txt"),
+        batch_size=batch_size,
+        num_workers=num_workers,
+        folder=False,
+        device_id=device_id,
+    )
+    nuswide_query_loader = create_test_loader(
+        osp.join(nuswide_data_dir, "query.txt"),
+        batch_size=batch_size,
+        num_workers=num_workers,
+        folder=False,
+        device_id=device_id,
+    )
+    nuswide_gallery_loader = create_test_loader(
+        osp.join(nuswide_data_dir, "gallery.txt"),
+        batch_size=batch_size,
+        num_workers=num_workers,
+        folder=False,
+        device_id=device_id,
+    )
+
+    return ilsvrc_query_loader, ilsvrc_gallery_loader, cifar_query_loader, cifar_gallery_loader, nuswide_query_loader, nuswide_gallery_loader
+
+
 def get_test_dataloader(
     ilsvrc_data_dir: str, 
     cifar_data_dir: str, 

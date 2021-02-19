@@ -1,7 +1,8 @@
 work_dir
 *log
 *dali*
-PretrainedHashing.tar.gz
+*.tar.gz
+*onnx
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

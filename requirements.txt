@@ -2,3 +2,4 @@ torch
 torchvision
 loguru
 pytorch-metric-learning
+onnx
