@@ -27,7 +27,6 @@ def get_model(
             hash_layer,
             classification_layer
         )
-        print(model.fc)
     elif arch.lower() == "alexnet":
         model = torchvision.models.alexnet(pretrained=True)
         hash_layer = nn.Sequential(
@@ -40,7 +39,18 @@ def get_model(
             hash_layer,
             classification_layer,
         )
-        print(model.classifier)
+    elif arch.lower() == "mobilenet":
+        model = torchvision.models.mobilenet_v2(pretrained=True)
+        hash_layer = nn.Sequential(
+            nn.Linear(4096, num_dim),
+            nn.Tanh(),
+        )
+        classification_layer = nn.Linear(num_dim, 1000)
+        model.classifier = nn.Sequential(
+            model.classifier[0],
+            hash_layer,
+            classification_layer,
+        )
     else:
         raise ValueError("Can not find CNN model name!")
 

@@ -21,6 +21,9 @@ def get_model(
     elif arch.lower() == "alexnet":
         model = torchvision.models.alexnet(pretrained=True)
         model.classifier[-1] = nn.Linear(4096, num_dim)
+    elif arch.lower() == "mobilenet":
+        model = torchvision.models.mobilenet_v2(pretrained=True)
+        model.classifier[-1] = nn.Linear(model.last_channel, num_dim)
     else:
         raise ValueError("Can not find CNN model name!")
 
