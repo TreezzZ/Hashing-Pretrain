@@ -35,10 +35,6 @@ parser.add_argument(
     help="The length of hash codes."
 )
 parser.add_argument(
-    "--data_type", type=str, required=True,
-    help="Data type."
-)
-parser.add_argument(
     "--ilsvrc_data_dir", type=str, required=True,
     help="Directory of ILSVRC-2012."
 )
@@ -61,14 +57,6 @@ parser.add_argument(
 
 args = parser.parse_args()
 args.device = torch.device("cuda", args.gpu)
-if args.data_type == "fp32":
-    args.data_type = np.float32
-elif args.data_type == "fp16":
-    args.data_type = np.float16
-elif args.data_type == "int8":
-    args.data_type = np.int8
-else:
-    raise ValueError(f"Can not find data type: {args.data_type}, please check it!")
 
 
 def dali_generate_codes(
