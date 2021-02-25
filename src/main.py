@@ -118,6 +118,4 @@ def main(args):
 
 if __name__ == "__main__":
     args = get_config()
-    for bits in [128, 256, 512, 1024]:
-        args.bits = bits
-        main(args)
+    main(args)
