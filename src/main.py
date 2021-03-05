@@ -101,7 +101,7 @@ def main(args):
             cifar_best_mAP = max(cifar_mAP, cifar_best_mAP)
             logger.debug(cifar_mAP)
 
-            nuswide_mAP = get_map(nuswide_query_loader, nuswide_gallery_loader, model, args.bits, args.device, 5000)
+            nuswide_mAP = get_map(nuswide_query_loader, nuswide_gallery_loader, model, args.bits, args.device, -1)
             nuswide_best_mAP = max(nuswide_mAP, nuswide_best_mAP)
 
             logger.info("\ncurrent epoch: {}\nilsvrc map: {:.4f}\tilsvrc best map: {:.4f}\ncifar map: {:.4f}\tcifar best map: {:.4f}\nnus-wide map: {:.4f}\tnus-wide best map: {:.4f}".format(epoch, ilsvrc_mAP, ilsvrc_best_mAP, cifar_mAP, cifar_best_mAP, nuswide_mAP, nuswide_best_mAP))

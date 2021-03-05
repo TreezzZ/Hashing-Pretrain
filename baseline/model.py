@@ -42,7 +42,7 @@ def get_model(
     elif arch.lower() == "mobilenet":
         model = torchvision.models.mobilenet_v2(pretrained=True)
         hash_layer = nn.Sequential(
-            nn.Linear(4096, num_dim),
+            nn.Linear(model.last_channel, num_dim),
             nn.Tanh(),
         )
         classification_layer = nn.Linear(num_dim, 1000)
