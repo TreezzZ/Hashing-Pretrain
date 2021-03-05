@@ -30,7 +30,7 @@ def get_model(
     elif arch.lower() == "alexnet":
         model = torchvision.models.alexnet(pretrained=True)
         hash_layer = nn.Sequential(
-            nn.Linear(model.last_channel, num_dim),
+            nn.Linear(4096, num_dim),
             nn.Tanh(),
         )
         classification_layer = nn.Linear(num_dim, 1000)
