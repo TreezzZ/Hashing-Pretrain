@@ -9,104 +9,100 @@ import torch
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
-
 class ExternalFolderTrainIterator(object):
     def __init__(
         self, 
         data_dir: str, 
         batch_size: int,
-        samples_per_class: int,
-        length_before_new_iter: int=1000000,
+        sample_per_class: int,
         ):
         """External Input Iterator.
-
         Args:
             data_dir (str): Dictory of dataset.
             batch_size (int): Batch size.
-            samples_per_class (int): Number of samples per class.
-            length_before_new_iter (int): Iteration length.
+            sample_per_class (int): Number of samples per class.
         """
         self.batch_size = batch_size
-        self.samples_per_class = samples_per_class
-        self.length_before_new_iter = length_before_new_iter
+        self.sample_per_class = sample_per_class
+        self.data = []
+        self.labels = []
 
-        dataset = ImageFolder(data_dir)
-        # ((img1, label1), (img2, label2), ...)
-        self.samples = dataset.samples
+        classes, class_to_idx = self._find_classes(data_dir)
+        self.classes = classes
+        self.dataset = {class_: [] for class_ in classes}
 
-        self.data = [item[0] for item in self.samples]
-        self.labels = [item[1] for item in self.samples]
-        self.labels_to_indices = self._get_labels_to_indices(self.labels)
+        idx = 0
+        for class_ in classes:
+            cur_class = osp.join(data_dir, class_)
+            files = os.listdir(cur_class)
+            files = [os.path.join(cur_class, i) for i in files]
+            self.data.extend(files)
+            self.labels.extend([class_to_idx[class_] for i in range(len(files))])
+            self.dataset[class_].extend([idx+i for i in range(len(files))])
+            idx += len(files)
+        
+        num_samples = [len(value) for value in self.dataset.values()]
+        self.max_samples = max(num_samples)
+        self.min_samples = min(num_samples)
 
-    def _get_labels_to_indices(self, labels):
-        """
-        Creates labels_to_indices, which is a dictionary mapping each label
-        to a numpy array of indices that will be used to index into self.dataset
-        """
-        if torch.is_tensor(labels):
-            labels = labels.cpu().numpy()
-        labels_to_indices = collections.defaultdict(list)
-        for i, label in enumerate(labels):
-            labels_to_indices[label].append(i)
-        for k, v in labels_to_indices.items():
-            labels_to_indices[k] = np.array(v, dtype=np.int)
-        return labels_to_indices
+        assert self.min_samples >= self.sample_per_class
     
+    def _find_classes(
+        self, 
+        data_dir: str,
+        ):
+        """
+        Finds the class folders in a dataset.
+        Args:
+            data_dir (string): Root directory path.
+        Returns:
+            tuple: (classes, class_to_idx) where classes are relative to (dir), and class_to_idx is a dictionary.
+        Ensures:
+            No class is a subdirectory of another.
+        """
+        classes = [d.name for d in os.scandir(data_dir) if d.is_dir()]
+        classes.sort()
+        class_to_idx = {classes[i]: i for i in range(len(classes))}
+        return classes, class_to_idx
+
     def __iter__(self):
-        idx_list = [0] * self.length_before_new_iter
-        i = 0
-        self.num_iters = self.length_before_new_iter // self.batch_size
-        labels = copy.deepcopy(self.labels)
-        for _ in tqdm(range(self.num_iters), desc="Prepare data"):
-            random.shuffle(labels)
-            curr_label_set = labels[: self.batch_size // self.samples_per_class]
-            for label in curr_label_set:
-                t = self.labels_to_indices[label]
-                idx_list[i : i + self.samples_per_class] = self._safe_random_choice(
-                    t, size=self.samples_per_class
-                )
-                i += self.samples_per_class
-        self.idx_list = idx_list
         self.i = 0
+        self.n = len(self.data) // self.batch_size
         return self
 
-
-    def _safe_random_choice(self, input_data, size):
-        """
-        Randomly samples without replacement from a sequence. It is "safe" because
-        if len(input_data) < size, it will randomly sample WITH replacement
-        Args:
-            input_data is a sequence, like a torch tensor, numpy array,
-                            python list, tuple etc
-            size is the number of elements to randomly sample from input_data
-        Returns:
-            An array of size "size", randomly sampled from input_data
-        """
-        replace = len(input_data) < size
-        return np.random.choice(input_data, size=size, replace=replace)
-
     def __next__(self):
-        idx = self.idx_list[self.i : min(self.i + self.batch_size, self.length_before_new_iter)]
-        self.i += self.batch_size
-        if self.i > self.length_before_new_iter:
-            self.__iter__()
+        if self.i >= self.n:
+            self.i = 0
             raise StopIteration
+        self.i += 1
 
-        imgs = []
+        batch = []
         labels = []
-        for i in idx:
-            img_filename = self.data[i]
-            label = self.labels[i]
-            with open(img_filename, 'rb') as f:
-                imgs.append(np.frombuffer(f.read(), dtype=np.uint8))
-            labels.append(np.array([label], dtype=np.uint8))
+        indices = self._balanced_sample()
         
-        return (imgs, labels)
+        for idx in indices:
+            img_filename = self.data[idx]
+            label = self.labels[idx]
+            with open(img_filename, 'rb') as f:
+                batch.append(np.frombuffer(f.read(), dtype = np.uint8))
+            labels.append(np.array([label], dtype = np.uint8))
+        
+        return (batch, labels)
 
     next = __next__
 
     def __len__(self):
-        return self.num_iters
+        return self.n
+
+    def _balanced_sample(self):
+        indices = []
+        class_per_batch = int(self.batch_size / self.sample_per_class)
+        classes = np.random.choice(range(len(self.classes)), size=class_per_batch, replace=False)
+        for class_idx in classes:
+                all_indices_of_one_class = self.dataset[self.classes[class_idx]]
+                for k in np.random.choice(range(len(all_indices_of_one_class)), size=self.sample_per_class, replace=False):
+                    indices.append(all_indices_of_one_class[k])
+        return indices
 
 
 class ExternalFolderTestIterator(object):

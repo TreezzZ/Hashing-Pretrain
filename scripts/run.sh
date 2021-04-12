@@ -6,8 +6,9 @@ python src/main.py\
     --batch_size 128\
     --samples_per_class 8\
     --eval_step 2000\
+    --num_workers 6\
     --gpu 0\
     --fp16\
-    --lr 0.0001\
-    --no_save \
-    --margin 0.1 \
+    --lr 0.00001\
+    --wandb \
+    --margin 0.1
