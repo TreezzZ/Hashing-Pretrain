@@ -9,16 +9,19 @@ from loguru import logger
 
 def init_train_env(
     work_dir: str, 
-    seed: int
+    seed: int,
+    gpu: int,
     ):
     """Initialize training environment.
     Args:
         work_dir (str): Directory to save log file, tensorboard file, checkpoint.
         seed (int): Random seed.
+        gpu (int): GPU ID.
     """
     os.makedirs(work_dir, exist_ok=True)
     logger.add(osp.join(work_dir, "train.log"))
     torch.backends.cudnn.benchmark = True
+    torch.cuda.set_device(gpu)
 
     random.seed(seed)                                      
     torch.manual_seed(seed)                                
@@ -31,7 +34,6 @@ def get_map(
     gallery_loader: torch.utils.data.DataLoader,
     model: torch.nn.Module, 
     bits: int, 
-    device: torch.device,
     topk: int,
     ) -> float:
     """Calculate mean average precision.
@@ -41,18 +43,15 @@ def get_map(
         gallery_loader (torch.utils.data.DataLoader): Gallery data loader.
         model (torch.nn.Module): CNN model.
         bits (int): Length of hash codes.
-        device (torch.device): GPU device.
         topk (int): Calculate top-k mAP.
 
     Returns:
         float: mean average precision
     """
     model.eval()
-    query_codes = generate_codes(query_loader, bits, model, device)
-    gallery_codes = generate_codes(gallery_loader, bits, model, device)
-    query_labels = query_loader.dataset.onehot_labels.to(device)
-    gallery_labels = gallery_loader.dataset.onehot_labels.to(device)
-    mAP = calculate_map(query_codes, gallery_codes, query_labels, gallery_labels, device, topk)
+    query_codes, query_labels = generate_codes(query_loader, bits, model)
+    gallery_codes, gallery_labels = generate_codes(gallery_loader, bits, model)
+    mAP = calculate_map(query_codes, gallery_codes, query_labels, gallery_labels, topk)
     model.train()
 
     return mAP
@@ -61,7 +60,6 @@ def generate_codes(
     loader: torch.utils.data.DataLoader,  
     bits: int, 
     model: torch.nn.Module, 
-    device: torch.device, 
     ) -> torch.Tensor:
     """Generate hash codes.
 
@@ -69,27 +67,31 @@ def generate_codes(
         loader (torch.utils.data.DataLoader): Data loader.
         bits (int): Length of hash codes.
         model (torch.nn.Module): CNN model.
-        device (torch.device): GPU Device.
 
     Returns:
         torch.Tensor: Hash codes.
     """
-    hash_codes = torch.zeros(len(loader.dataset), bits, device=device)
+    hash_codes = torch.zeros(len(loader._pipes[0].input_iter), bits).cuda()
+    labels = loader._pipes[0].input_iter.labels.cuda()
+    pointer = 0
     with torch.no_grad():
-        for x, _, index in loader:
-            x = x.to(device)
+        for batch in loader:
+            x = batch[0]["data"]
             hash_code = model(x)
             hash_code = hash_code.sign()
-            hash_codes[index, :] = hash_code
 
-    return hash_codes 
+            next_pointer = pointer + x.shape[0]
+            hash_codes[pointer: next_pointer, :] = hash_code
+            pointer = next_pointer
+        loader.reset()
+
+    return hash_codes, labels
 
 def calculate_map(
     query_code: torch.Tensor,
     gallery_code: torch.Tensor,
     query_targets: torch.Tensor,
     gallery_targets: torch.Tensor,
-    device: torch.device,
     topk: int=None,
 ) -> float:
     """
@@ -99,7 +101,6 @@ def calculate_map(
         gallery_code (torch.Tensor): Gallery data hash code.
         query_targets (torch.Tensor): Query data targets, one-hot
         gallery_targets (torch.Tensor): Gallery data targets, one-host
-        device (torch.device): GPU Device.
         topk (int): Calculate top k data map.
     Returns:
         float: Mean Average Precision.
@@ -125,7 +126,7 @@ def calculate_map(
             continue
 
         # Generate score for every position
-        score = torch.linspace(1, gallery_cnt, gallery_cnt).to(device)
+        score = torch.linspace(1, gallery_cnt, gallery_cnt).cuda()
 
         # Acquire index
         index = (torch.nonzero(gallery == 1).squeeze() + 1.0).float()

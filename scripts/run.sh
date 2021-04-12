@@ -4,8 +4,10 @@ python src/main.py\
     --cifar_data_dir /dataset/cifar-10\
     --nuswide_data_dir /dataset/nus-wide\
     --batch_size 128\
-    --sample_per_class 8\
-    --eval_step 1\
+    --samples_per_class 8\
+    --eval_step 2000\
+    --gpu 0\
     --fp16\
-    --lr 0.001\
+    --lr 0.0001\
+    --no_save \
     --margin 0.1 \

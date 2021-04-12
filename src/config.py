@@ -43,7 +43,7 @@ def get_config():
         help="Batch size. (default: 128)"
     )
     dataset_group.add_argument(
-        "--sample_per_class", type=int, default=8,
+        "--samples_per_class", type=int, default=8,
         help="Number of samples per class. (default: 8)"
     )
     dataset_group.add_argument(
@@ -67,8 +67,8 @@ def get_config():
         help="Specify gpu. (Default: 0)"
     )
     train_group.add_argument(
-        "--max_epochs", type=int, default=5,
-        help="The number of epochs. (default: 5)"
+        "--max_iters", type=int, default=50000,
+        help="The number of iterations. (default: 50000)"
     )
     train_group.add_argument(
         "--eval_step", type=int, default=5,
@@ -87,8 +87,8 @@ def get_config():
         help="FP16 Training."
     )
     train_group.add_argument(
-        "--tensorboard", action="store_true",
-        help="Enable tensorboard."
+        "--wandb", action="store_true",
+        help="Enable wandb."
     )
     train_group.add_argument(
         "--no_save", action="store_true",
@@ -100,7 +100,6 @@ def get_config():
     )
 
     args = parser.parse_args()
-    args.device = torch.device("cuda", args.gpu)
     args.work_dir = osp.join(args.work_dir, f"{str(datetime.datetime.now())}")
 
     return args
