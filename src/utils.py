@@ -5,6 +5,7 @@ import random
 import numpy as np
 import torch
 from loguru import logger
+from tqdm import tqdm
 
 
 def init_train_env(
@@ -71,21 +72,16 @@ def generate_codes(
     Returns:
         torch.Tensor: Hash codes.
     """
-    hash_codes = torch.zeros(len(loader._pipes[0].input_iter), bits).cuda()
-    labels = loader._pipes[0].input_iter.labels.cuda()
-    pointer = 0
+    hash_codes = torch.zeros(len(loader.dataset), bits).cuda()
     with torch.no_grad():
-        for batch in loader:
-            x = batch[0]["data"]
+        for x, _, idx in tqdm(loader, desc="Generating embeddings"):
+            x = x.cuda(non_blocking=True)
             hash_code = model(x)
             hash_code = hash_code.sign()
 
-            next_pointer = pointer + x.shape[0]
-            hash_codes[pointer: next_pointer, :] = hash_code
-            pointer = next_pointer
-        loader.reset()
+            hash_codes[idx, :] = hash_code
 
-    return hash_codes, labels
+    return hash_codes, loader.dataset.labels.cuda()
 
 def calculate_map(
     query_code: torch.Tensor,

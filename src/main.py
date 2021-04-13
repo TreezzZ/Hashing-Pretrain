@@ -26,15 +26,14 @@ def main(args):
     logger.info("\n" + "\n".join(params))
 
     # Get dataloader
-    ilsvrc_train_loader, ilsvrc_query_loader, ilsvrc_gallery_loader, cifar_query_loader, cifar_gallery_loader, nuswide_query_loader, nuswide_gallery_loader = get_dataloader(
+    ilsvrc_train_loader, cifar_query_loader, cifar_gallery_loader, nuswide_query_loader, nuswide_gallery_loader = get_dataloader(
         args.ilsvrc_data_dir,
         args.cifar_data_dir,
         args.nuswide_data_dir,
-        args.batch_size,
+        args.train_batch_size,
+        args.test_batch_size,
         args.samples_per_class,
         args.num_workers,
-        args.gpu,
-        args.seed,
     )
 
     # Get model
@@ -68,94 +67,86 @@ def main(args):
         scaler = GradScaler()
 
     checkpoint_name = None
-    ilsvrc_best_mAP = cifar_best_mAP = nuswide_best_mAP = 0.
+    cifar_best_mAP = nuswide_best_mAP = 0.
     running_loss = 0.
     start_time = time.time()
     cur_iter = 0
-    num_imgs = 1300000
-    iters_per_epoch = num_imgs // args.batch_size
-    epochs = args.max_iters // iters_per_epoch
-    for _ in range(epochs):
-        for batch in ilsvrc_train_loader:
-            cur_iter += 1
-            model.train()
+    train_iter = iter(ilsvrc_train_loader)
+    while cur_iter < args.max_iters:
+        try:
+            data, labels = train_iter.next()
+        except StopIteration:
+            train_iter = iter(ilsvrc_train_loader)
+            data, labels = train_iter.next()
+        cur_iter += 1
+        model.train()
+        optimizer.zero_grad()
+        data, labels = data.cuda(non_blocking=True), labels.cuda(non_blocking=True)
 
-            data = batch[0]["data"]
-            labels = batch[0]["label"].squeeze()
-            optimizer.zero_grad()
-
-            if args.fp16:
-                with autocast():
-                    embeddings = model(data)
-                    mining_pairs = miner(embeddings, labels)
-                    loss = loss_function(embeddings, labels, mining_pairs)
-                    running_loss += loss.item()
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-            else:
+        if args.fp16:
+            with autocast():
                 embeddings = model(data)
                 mining_pairs = miner(embeddings, labels)
                 loss = loss_function(embeddings, labels, mining_pairs)
                 running_loss += loss.item()
-                loss.backward()
-                optimizer.step()
-                
-            if cur_iter % args.log_step == 0:
-                running_loss /= args.log_step
-                logger.info("Iter: {:>2d} Time: {:>.2f} Loss: {:>.4f}".format(cur_iter, time.time()-start_time, running_loss))
-                if args.wandb:
-                    wandb.log({
-                        "Loss/total": running_loss,
-                        "Iter": cur_iter,
-                    })
-                running_loss = 0.
-                
-            if cur_iter % args.eval_step == 0:
-                ilsvrc_mAP = get_map(
-                    ilsvrc_query_loader, 
-                    ilsvrc_gallery_loader, 
-                    model, 
-                    args.bits, 
-                    1000,
-                )
-                ilsvrc_best_mAP = max(ilsvrc_mAP, ilsvrc_best_mAP)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            embeddings = model(data)
+            mining_pairs = miner(embeddings, labels)
+            loss = loss_function(embeddings, labels, mining_pairs)
+            running_loss += loss.item()
+            loss.backward()
+            optimizer.step()
+            
+        if cur_iter % args.log_step == 0:
+            running_loss /= args.log_step
+            logger.info("Iter: {:>2d} Time: {:>.2f} Loss: {:>.4f}".format(cur_iter, time.time()-start_time, running_loss))
+            if args.wandb:
+                wandb.log({
+                    "Loss/total": running_loss,
+                    "Iter": cur_iter,
+                })
+            running_loss = 0.
+            
+        if cur_iter % args.eval_step == 0:
+            logger.info(f"Iter: {cur_iter}, Evaluating...")
 
-                cifar_mAP = get_map(
-                    cifar_query_loader, 
-                    cifar_gallery_loader, 
-                    model, 
-                    args.bits, 
-                    -1,
-                )
-                cifar_best_mAP = max(cifar_mAP, cifar_best_mAP)
+            cifar_mAP = get_map(
+                cifar_query_loader, 
+                cifar_gallery_loader, 
+                model, 
+                args.bits, 
+                -1,
+            )
+            cifar_best_mAP = max(cifar_mAP, cifar_best_mAP)
+            logger.info("CIFAR-10")
+            logger.info("current iter MAP: {:.4f}\tbest MAP: {:.4f}".format(cifar_mAP, cifar_best_mAP))
 
-                nuswide_mAP = get_map(
-                    nuswide_query_loader, 
-                    nuswide_gallery_loader, 
-                    model, 
-                    args.bits, 
-                    -1,
-                )
-                nuswide_best_mAP = max(nuswide_mAP, nuswide_best_mAP)
+            nuswide_mAP = get_map(
+                nuswide_query_loader, 
+                nuswide_gallery_loader, 
+                model, 
+                args.bits, 
+                -1,
+            )
+            nuswide_best_mAP = max(nuswide_mAP, nuswide_best_mAP)
+            logger.info("NUS-WIDE")
+            logger.info("current iter MAP: {:.4f}\tbest MAP: {:.4f}".format(nuswide_mAP, nuswide_best_mAP))
 
-                scheduler.step(cifar_mAP)
+            scheduler.step(cifar_mAP)
 
-                logger.info("\nIter: {}\tilsvrc map: {:.4f}\tilsvrc best map: {:.4f}\ncifar map: {:.4f}\tcifar best map: {:.4f}\nnus-wide map: {:.4f}\tnus-wide best map: {:.4f}".format(cur_iter, ilsvrc_mAP, ilsvrc_best_mAP, cifar_mAP, cifar_best_mAP, nuswide_mAP, nuswide_best_mAP))
-
-                if args.wandb:
-                    wandb.log({
-                        "Metric/ILSVRC-2012": ilsvrc_mAP,
-                        "Metric/CIFAR-10": cifar_mAP,
-                        "Metric/NUS-WIDE": nuswide_mAP,
-                        "Iter": cur_iter,
-                    })
-                if not args.no_save:
-                    checkpoint_name = "Iter_{}_ilsvrc_mAP_{:.4f}_cifar_mAP_{:.4f}_nuswide_mAP_{:.4f}.ckpt".format(cur_iter, ilsvrc_mAP, cifar_mAP, nuswide_mAP)
-                    checkpoint_pth = osp.join(args.work_dir, checkpoint_name)
-                    torch.save(model.state_dict(), checkpoint_pth)
-
-        ilsvrc_train_loader.reset()
+            if args.wandb:
+                wandb.log({
+                    "Metric/CIFAR-10": cifar_mAP,
+                    "Metric/NUS-WIDE": nuswide_mAP,
+                    "Iter": cur_iter,
+                })
+            if not args.no_save:
+                checkpoint_name = "Iter_{}_cifar_mAP_{:.4f}_nuswide_mAP_{:.4f}.ckpt".format(cur_iter, cifar_mAP, nuswide_mAP)
+                checkpoint_pth = osp.join(args.work_dir, checkpoint_name)
+                torch.save(model.state_dict(), checkpoint_pth)
 
 
 if __name__ == "__main__":

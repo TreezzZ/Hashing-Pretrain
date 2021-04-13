@@ -39,8 +39,12 @@ def get_config():
         help="Directory of NUS-WIDE."
     )
     dataset_group.add_argument(
-        "--batch_size", type=int, default=128,
-        help="Batch size. (default: 128)"
+        "--train_batch_size", type=int, default=128,
+        help="Train batch size. (default: 128)"
+    )
+    dataset_group.add_argument(
+        "--test_batch_size", type=int, default=256,
+        help="Test batch size. (default: 256)"
     )
     dataset_group.add_argument(
         "--samples_per_class", type=int, default=8,
